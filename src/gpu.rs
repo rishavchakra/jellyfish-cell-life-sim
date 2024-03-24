@@ -1,4 +1,7 @@
+use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
+
+use crate::render_plane::Vertex;
 
 pub struct State<'a> {
     gpu_surface: wgpu::Surface<'a>,
@@ -6,6 +9,8 @@ pub struct State<'a> {
     gpu_queue: wgpu::Queue,
     gpu_config: wgpu::SurfaceConfiguration,
     gpu_render_pipeline: wgpu::RenderPipeline,
+
+    buf_plane_vertices: wgpu::Buffer,
 
     window_handle: &'a Window,
     pub window_size: PhysicalSize<u32>,
@@ -70,14 +75,15 @@ impl<'a> State<'a> {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Plane Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into())
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Pipeline Layout"),
-            bind_group_layouts: &[],
-            push_constant_ranges: &[],
-        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -85,7 +91,9 @@ impl<'a> State<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[
+                    Vertex::desc()
+                ],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -114,12 +122,20 @@ impl<'a> State<'a> {
             multiview: None,
         });
 
+        let buf_plane_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Plane Vertices Buffer"),
+            contents: bytemuck::cast_slice(crate::render_plane::PLANE_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
         Some(Self {
             gpu_surface: surface,
             gpu_device: device,
             gpu_queue: queue,
             gpu_config: config,
             gpu_render_pipeline: render_pipeline,
+
+            buf_plane_vertices,
 
             window_handle: window,
             window_size: size,
@@ -181,7 +197,8 @@ impl<'a> State<'a> {
             });
 
             render_pass.set_pipeline(&self.gpu_render_pipeline);
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_vertex_buffer(0, self.buf_plane_vertices.slice(..));
+            render_pass.draw(0..(3 * 2), 0..1);
         }
 
         self.gpu_queue.submit(std::iter::once(encoder.finish()));
