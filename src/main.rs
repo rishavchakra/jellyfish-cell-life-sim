@@ -1,6 +1,7 @@
 use winit::{event::*, event_loop::EventLoop, window::WindowBuilder};
 mod gpu;
 mod render_plane;
+mod agents;
 
 fn main() {
     env_logger::init();

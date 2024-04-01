@@ -1,6 +1,7 @@
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
+use crate::agents::AgentVert;
 use crate::render_plane::Vertex;
 
 pub struct State<'a> {
@@ -8,9 +9,12 @@ pub struct State<'a> {
     gpu_device: wgpu::Device,
     gpu_queue: wgpu::Queue,
     gpu_config: wgpu::SurfaceConfiguration,
-    gpu_render_pipeline: wgpu::RenderPipeline,
+
+    pipeline_plane: wgpu::RenderPipeline,
+    pipeline_agents: wgpu::RenderPipeline,
 
     buf_plane_vertices: wgpu::Buffer,
+    buf_agent_vertices: wgpu::Buffer,
 
     window_handle: &'a Window,
     pub window_size: PhysicalSize<u32>,
@@ -73,30 +77,56 @@ impl<'a> State<'a> {
 
         surface.configure(&device, &config);
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Plane Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
-
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Pipeline Layout"),
-                bind_group_layouts: &[],
-                push_constant_ranges: &[],
-            });
-
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
+        let plane_shader = device.create_shader_module(Vertex::shader_desc());
+        let plane_pipeline_layout = device.create_pipeline_layout(&Vertex::pipeline_layout_desc());
+        let plane_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Plane Render Pipeline"),
+            layout: Some(&plane_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &plane_shader,
                 entry_point: "vs_main",
-                buffers: &[
-                    Vertex::desc()
-                ],
+                buffers: &[Vertex::buf_desc()],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &plane_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            depth_stencil: None,
+            multiview: None,
+        });
+
+        let agent_shader = device.create_shader_module(AgentVert::shader_desc());
+        let agent_pipeline_layout =
+            device.create_pipeline_layout(&AgentVert::pipeline_layout_desc());
+        let agent_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Agent Render Pipeline"),
+            layout: Some(&agent_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &agent_shader,
+                entry_point: "vs_main",
+                buffers: &[AgentVert::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &agent_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
@@ -128,14 +158,23 @@ impl<'a> State<'a> {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
+        let buf_agent_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Agent Vertices Buffer"),
+            contents: bytemuck::cast_slice(crate::agents::AGENT_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
         Some(Self {
             gpu_surface: surface,
             gpu_device: device,
             gpu_queue: queue,
             gpu_config: config,
-            gpu_render_pipeline: render_pipeline,
+
+            pipeline_plane: plane_pipeline,
+            pipeline_agents: agent_pipeline,
 
             buf_plane_vertices,
+            buf_agent_vertices,
 
             window_handle: window,
             window_size: size,
@@ -176,7 +215,7 @@ impl<'a> State<'a> {
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
+                label: Some("Plane Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     // Draw to the screen texture view
                     view: &view,
@@ -196,9 +235,31 @@ impl<'a> State<'a> {
                 timestamp_writes: None,
             });
 
-            render_pass.set_pipeline(&self.gpu_render_pipeline);
+            render_pass.set_pipeline(&self.pipeline_plane);
             render_pass.set_vertex_buffer(0, self.buf_plane_vertices.slice(..));
             render_pass.draw(0..(3 * 2), 0..1);
+
+            // render_pass.set_pipeline(&self.buf_agent_vertices);
+            render_pass.set_pipeline(&self.pipeline_agents);
+            render_pass.set_vertex_buffer(0, self.buf_agent_vertices.slice(..));
+            render_pass.draw(0..3, 0..1);
+        }
+
+        {
+            // let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            //     label: Some("Agents Render Pass"),
+            //     color_attachments: &[Some(wgpu::RenderP  {
+            //         view: &view,
+            //         resolve_target: None,
+            //         ops: wgpu::Operations {
+            //             load: wgpu::LoadOp::Load,
+            //             store: wgpu::StoreOp::Store,
+            //         },
+            //     })],
+            //     depth_stencil_attachment: None,
+            //     occlusion_query_set: None,
+            //     timestamp_writes: None,
+            // });
         }
 
         self.gpu_queue.submit(std::iter::once(encoder.finish()));
