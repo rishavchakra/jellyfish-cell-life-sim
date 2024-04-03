@@ -31,6 +31,8 @@ pub struct State<'a> {
 
     window_handle: &'a Window,
     pub window_size: PhysicalSize<u32>,
+
+    frame_num: u64,
 }
 
 impl<'a> State<'a> {
@@ -353,6 +355,8 @@ impl<'a> State<'a> {
 
             window_handle: window,
             window_size: size,
+
+            frame_num: 0,
         })
     }
 
@@ -431,12 +435,18 @@ impl<'a> State<'a> {
             let xgroups = xdim / 8;
 
             compute_pass.set_pipeline(&self.pipeline_compute_agents);
-            compute_pass.set_bind_group(0, &self.bindgroup_compute_agents[0], &[]);
+            compute_pass.set_bind_group(
+                0,
+                &self.bindgroup_compute_agents[(self.frame_num % 2) as usize],
+                &[],
+            );
             compute_pass.dispatch_workgroups(xgroups, 1, 1);
         }
 
         self.gpu_queue.submit(std::iter::once(encoder.finish()));
         output.present();
+
+        self.frame_num += 1;
 
         Ok(())
     }
