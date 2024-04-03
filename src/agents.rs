@@ -1,3 +1,5 @@
+use rand::{thread_rng, Rng};
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Agent {
@@ -5,16 +7,17 @@ pub struct Agent {
     angle: f32,
 }
 
-const NUM_AGENTS: usize = 100;
+pub const NUM_AGENTS: usize = 200;
 
 lazy_static! {
     pub static ref AGENTS_INIT: [Agent; NUM_AGENTS] = {
         let mut agents_vec = Vec::with_capacity(NUM_AGENTS);
+        let mut rng = thread_rng();
 
         for _ in 0..NUM_AGENTS {
             agents_vec.push(Agent {
-                position: [rand::random(), rand::random()],
-                angle: rand::random(),
+                position: [rng.gen_range(0..1000) as f32, rng.gen_range(0..1000) as f32],
+                angle: rng.gen_range(0..6) as f32,
             })
         }
 
@@ -23,18 +26,6 @@ lazy_static! {
 }
 
 impl Agent {
-    pub fn buf_layout_desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Agent>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                shader_location: 0,
-                offset: 0,
-                format: wgpu::VertexFormat::Float32x2,
-            }],
-        }
-    }
-
     pub fn buf_init_desc() -> wgpu::util::BufferInitDescriptor<'static> {
         wgpu::util::BufferInitDescriptor {
             label: Some("Agent Buffer"),
@@ -46,18 +37,51 @@ impl Agent {
         }
     }
 
-    // pub fn shader_desc() -> wgpu::ShaderModuleDescriptor<'static> {
-    //     wgpu::ShaderModuleDescriptor {
-    //         label: Some("Agent Shader"),
-    //         source: wgpu::ShaderSource::Wgsl(include_str!("shader_agent.wgsl").into()),
-    //     }
-    // }
+    pub fn compute_shader_desc() -> wgpu::ShaderModuleDescriptor<'static> {
+        wgpu::ShaderModuleDescriptor {
+            label: Some("Agent Compute Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader_compute_agent.wgsl").into()),
+        }
+    }
 
-    pub fn pipeline_layout_desc() -> wgpu::PipelineLayoutDescriptor<'static> {
-        wgpu::PipelineLayoutDescriptor {
-            label: Some("Agent Pipeline Layout"),
-            bind_group_layouts: &[],
-            push_constant_ranges: &[],
+    pub fn bind_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: Some("Agent Compute Bind Group Layout"),
+            entries: &[
+                // Source buffer: the compute shader reads from this
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Destination buffer: the compute shader writes to this (for the next frame's compute)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Texture: the compute shader writes to this (for display)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+            ],
         }
     }
 }

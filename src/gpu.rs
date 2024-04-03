@@ -1,7 +1,7 @@
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::agents::Agent;
+use crate::agents::{Agent, NUM_AGENTS};
 use crate::render_plane::{Vertex, PLANE_VERTICES};
 
 pub struct State<'a> {
@@ -13,17 +13,21 @@ pub struct State<'a> {
     bindgroup_plane_env: wgpu::BindGroup,
     bindgroup_plane_agents: wgpu::BindGroup,
 
+    bindgroup_compute_agents: [wgpu::BindGroup; 2],
+
     pipeline_plane_env: wgpu::RenderPipeline,
     pipeline_plane_agents: wgpu::RenderPipeline,
+
+    pipeline_compute_agents: wgpu::ComputePipeline,
 
     buf_plane_env: wgpu::Buffer,
     buf_plane_agents: wgpu::Buffer,
 
-    buf_agents_forward: wgpu::Buffer,
-    buf_agents_reverse: wgpu::Buffer,
+    _buf_agent_forward: wgpu::Buffer,
+    _buf_agent_reverse: wgpu::Buffer,
 
-    texture_env: wgpu::Texture,
-    texture_agents: wgpu::Texture,
+    _texture_env: wgpu::Texture,
+    _texture_agents: wgpu::Texture,
 
     window_handle: &'a Window,
     pub window_size: PhysicalSize<u32>,
@@ -69,8 +73,7 @@ impl<'a> State<'a> {
             .formats
             .iter()
             .copied()
-            .filter(|f| f.is_srgb())
-            .next()
+            .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
 
         let config = wgpu::SurfaceConfiguration {
@@ -97,9 +100,6 @@ impl<'a> State<'a> {
             contents: bytemuck::cast_slice(PLANE_VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-
-        let buf_agents_forward = device.create_buffer_init(&Agent::buf_init_desc());
-        let buf_agents_reverse = device.create_buffer_init(&Agent::buf_init_desc());
 
         let texture_agents = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Agent Texture"),
@@ -146,8 +146,7 @@ impl<'a> State<'a> {
                 | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let texture_env_view =
-            texture_env.create_view(&wgpu::TextureViewDescriptor::default());
+        let texture_env_view = texture_env.create_view(&wgpu::TextureViewDescriptor::default());
         let texture_env_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Env Texture Sampler"),
             address_mode_u: wgpu::AddressMode::MirrorRepeat,
@@ -269,6 +268,64 @@ impl<'a> State<'a> {
             multiview: None,
         });
 
+        let buf_agent_forward = device.create_buffer_init(&Agent::buf_init_desc());
+        let buf_agent_reverse = device.create_buffer_init(&Agent::buf_init_desc());
+
+        let compute_agent_shader = device.create_shader_module(Agent::compute_shader_desc());
+        let compute_agent_bindgroup_layout =
+            device.create_bind_group_layout(&Agent::bind_layout_desc());
+        let compute_agent_bindgroups = [
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Agent Compute Bindgroup Forward"),
+                layout: &compute_agent_bindgroup_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buf_agent_forward.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: buf_agent_reverse.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&texture_agents_view),
+                    },
+                ],
+            }),
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Agent Compute Bindgroup Reverse"),
+                layout: &compute_agent_bindgroup_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buf_agent_reverse.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: buf_agent_forward.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&texture_agents_view),
+                    },
+                ],
+            }),
+        ];
+        let compute_agent_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Agent Compute Pipeline Layout"),
+                bind_group_layouts: &[&compute_agent_bindgroup_layout],
+                push_constant_ranges: &[],
+            });
+        let compute_agent_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Agent Compute Pipeline"),
+                layout: Some(&compute_agent_pipeline_layout),
+                module: &compute_agent_shader,
+                entry_point: "compute_main",
+            });
+
         Some(Self {
             gpu_surface: surface,
             gpu_device: device,
@@ -278,17 +335,21 @@ impl<'a> State<'a> {
             bindgroup_plane_env: plane_env_bindgroup,
             bindgroup_plane_agents: plane_agent_bindgroup,
 
+            bindgroup_compute_agents: compute_agent_bindgroups,
+
             pipeline_plane_env: plane_env_pipeline,
             pipeline_plane_agents: plane_agent_pipeline,
+
+            pipeline_compute_agents: compute_agent_pipeline,
 
             buf_plane_env: buf_env_vertices,
             buf_plane_agents: buf_agent_vertices,
 
-            texture_env,
-            texture_agents,
+            _texture_env: texture_env,
+            _texture_agents: texture_agents,
 
-            buf_agents_forward,
-            buf_agents_reverse,
+            _buf_agent_forward: buf_agent_forward,
+            _buf_agent_reverse: buf_agent_reverse,
 
             window_handle: window,
             window_size: size,
@@ -296,7 +357,7 @@ impl<'a> State<'a> {
     }
 
     pub fn window(&self) -> &Window {
-        &self.window_handle
+        self.window_handle
     }
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
@@ -358,6 +419,20 @@ impl<'a> State<'a> {
             render_pass.set_bind_group(0, &self.bindgroup_plane_agents, &[]);
             render_pass.set_vertex_buffer(0, self.buf_plane_agents.slice(..));
             render_pass.draw(0..(PLANE_VERTICES.len() as u32), 0..1);
+        }
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Agent Compute Pass"),
+                timestamp_writes: None,
+            });
+
+            let xdim = NUM_AGENTS as u32;
+            let xgroups = xdim / 8;
+
+            compute_pass.set_pipeline(&self.pipeline_compute_agents);
+            compute_pass.set_bind_group(0, &self.bindgroup_compute_agents[0], &[]);
+            compute_pass.dispatch_workgroups(xgroups, 1, 1);
         }
 
         self.gpu_queue.submit(std::iter::once(encoder.finish()));
