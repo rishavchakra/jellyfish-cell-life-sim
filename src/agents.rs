@@ -1,4 +1,7 @@
-use rand::{thread_rng, Rng};
+use rand::{
+    distributions::{Distribution, Uniform},
+    thread_rng,
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, Default)]
@@ -13,11 +16,16 @@ lazy_static! {
     pub static ref AGENTS_INIT: [Agent; NUM_AGENTS] = {
         let mut agents_vec = Vec::with_capacity(NUM_AGENTS);
         let mut rng = thread_rng();
+        let position_range = Uniform::from(400..=600);
+        let angle_range = Uniform::from(0.0..std::f32::consts::TAU);
 
         for _ in 0..NUM_AGENTS {
             agents_vec.push(Agent {
-                position: [rng.gen_range(0..1000) as f32, rng.gen_range(0..1000) as f32],
-                angle: rng.gen_range(0..6) as f32,
+                position: [
+                    position_range.sample(&mut rng) as f32,
+                    position_range.sample(&mut rng) as f32,
+                ],
+                angle: angle_range.sample(&mut rng),
             })
         }
 
