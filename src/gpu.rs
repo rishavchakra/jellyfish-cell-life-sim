@@ -60,7 +60,7 @@ impl<'a> State<'a> {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::empty(),
+                    required_features: wgpu::Features::CLEAR_TEXTURE,
                     required_limits: wgpu::Limits::default(),
                     label: None,
                 },
@@ -423,6 +423,16 @@ impl<'a> State<'a> {
             render_pass.set_bind_group(0, &self.bindgroup_plane_agents, &[]);
             render_pass.set_vertex_buffer(0, self.buf_plane_agents.slice(..));
             render_pass.draw(0..(PLANE_VERTICES.len() as u32), 0..1);
+        }
+
+        {
+            encoder.clear_texture(&self._texture_agents, &wgpu::ImageSubresourceRange {
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                mip_level_count: None,
+                base_array_layer: 0,
+                array_layer_count: None,
+            });
         }
 
         {
