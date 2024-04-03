@@ -1,8 +1,8 @@
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::agents::AgentVert;
-use crate::render_plane::Vertex;
+use crate::agents::Agent;
+use crate::render_plane::{Vertex, PLANE_VERTICES};
 
 pub struct State<'a> {
     gpu_surface: wgpu::Surface<'a>,
@@ -10,11 +10,20 @@ pub struct State<'a> {
     gpu_queue: wgpu::Queue,
     gpu_config: wgpu::SurfaceConfiguration,
 
-    pipeline_plane: wgpu::RenderPipeline,
-    pipeline_agents: wgpu::RenderPipeline,
+    bindgroup_plane_env: wgpu::BindGroup,
+    bindgroup_plane_agents: wgpu::BindGroup,
 
-    buf_plane_vertices: wgpu::Buffer,
-    buf_agent_vertices: wgpu::Buffer,
+    pipeline_plane_env: wgpu::RenderPipeline,
+    pipeline_plane_agents: wgpu::RenderPipeline,
+
+    buf_plane_env: wgpu::Buffer,
+    buf_plane_agents: wgpu::Buffer,
+
+    buf_agents_forward: wgpu::Buffer,
+    buf_agents_reverse: wgpu::Buffer,
+
+    texture_env: wgpu::Texture,
+    texture_agents: wgpu::Texture,
 
     window_handle: &'a Window,
     pub window_size: PhysicalSize<u32>,
@@ -77,91 +86,187 @@ impl<'a> State<'a> {
 
         surface.configure(&device, &config);
 
-        let plane_shader = device.create_shader_module(Vertex::shader_desc());
-        let plane_pipeline_layout = device.create_pipeline_layout(&Vertex::pipeline_layout_desc());
-        let plane_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Plane Render Pipeline"),
-            layout: Some(&plane_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &plane_shader,
-                entry_point: "vs_main",
-                buffers: &[Vertex::buf_desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &plane_shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            depth_stencil: None,
-            multiview: None,
-        });
-
-        let agent_shader = device.create_shader_module(AgentVert::shader_desc());
-        let agent_pipeline_layout =
-            device.create_pipeline_layout(&AgentVert::pipeline_layout_desc());
-        let agent_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Agent Render Pipeline"),
-            layout: Some(&agent_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &agent_shader,
-                entry_point: "vs_main",
-                buffers: &[AgentVert::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &agent_shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            depth_stencil: None,
-            multiview: None,
-        });
-
-        let buf_plane_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let buf_env_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Plane Vertices Buffer"),
-            contents: bytemuck::cast_slice(crate::render_plane::PLANE_VERTICES),
+            contents: bytemuck::cast_slice(PLANE_VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let buf_agent_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Agent Vertices Buffer"),
-            contents: bytemuck::cast_slice(crate::agents::AGENT_VERTICES),
+            contents: bytemuck::cast_slice(PLANE_VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let buf_agents_forward = device.create_buffer_init(&Agent::buf_init_desc());
+        let buf_agents_reverse = device.create_buffer_init(&Agent::buf_init_desc());
+
+        let texture_agents = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Agent Texture"),
+            size: wgpu::Extent3d {
+                width: size.width,
+                height: size.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let texture_agents_view =
+            texture_agents.create_view(&wgpu::TextureViewDescriptor::default());
+        let texture_agents_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Agent Texture Sampler"),
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            address_mode_w: wgpu::AddressMode::MirrorRepeat,
+            mag_filter: wgpu::FilterMode::Linear, // Change to Nearest to retain the pixel look
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let texture_env = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Env Texture"),
+            size: wgpu::Extent3d {
+                width: size.width,
+                height: size.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let texture_env_view =
+            texture_env.create_view(&wgpu::TextureViewDescriptor::default());
+        let texture_env_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Env Texture Sampler"),
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            address_mode_w: wgpu::AddressMode::MirrorRepeat,
+            mag_filter: wgpu::FilterMode::Linear, // Change to Nearest to retain the pixel look
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        // Modules common to both planes
+        let plane_bindgroup_layout = device.create_bind_group_layout(&Vertex::bind_layout_desc());
+        let plane_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Plane Pipeline Layout"),
+                bind_group_layouts: &[&plane_bindgroup_layout],
+                push_constant_ranges: &[],
+            });
+
+        // Plane-specific modules
+        let plane_env_shader = device.create_shader_module(Vertex::shader_env_desc());
+        let plane_env_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Env Plane Bindgroup"),
+            layout: &plane_bindgroup_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_env_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture_env_sampler),
+                },
+            ],
+        });
+        let plane_env_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Env Plane Render Pipeline"),
+            layout: Some(&plane_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &plane_env_shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::buf_desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &plane_env_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            depth_stencil: None,
+            multiview: None,
+        });
+
+        let plane_agent_shader = device.create_shader_module(Vertex::shader_agent_desc());
+        let plane_agent_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Agent Plane Bindgroup"),
+            layout: &plane_bindgroup_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_agents_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture_agents_sampler),
+                },
+            ],
+        });
+        let plane_agent_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Agent Plane Render Pipeline"),
+            layout: Some(&plane_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &plane_agent_shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::buf_desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &plane_agent_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            depth_stencil: None,
+            multiview: None,
         });
 
         Some(Self {
@@ -170,11 +275,20 @@ impl<'a> State<'a> {
             gpu_queue: queue,
             gpu_config: config,
 
-            pipeline_plane: plane_pipeline,
-            pipeline_agents: agent_pipeline,
+            bindgroup_plane_env: plane_env_bindgroup,
+            bindgroup_plane_agents: plane_agent_bindgroup,
 
-            buf_plane_vertices,
-            buf_agent_vertices,
+            pipeline_plane_env: plane_env_pipeline,
+            pipeline_plane_agents: plane_agent_pipeline,
+
+            buf_plane_env: buf_env_vertices,
+            buf_plane_agents: buf_agent_vertices,
+
+            texture_env,
+            texture_agents,
+
+            buf_agents_forward,
+            buf_agents_reverse,
 
             window_handle: window,
             window_size: size,
@@ -235,31 +349,15 @@ impl<'a> State<'a> {
                 timestamp_writes: None,
             });
 
-            render_pass.set_pipeline(&self.pipeline_plane);
-            render_pass.set_vertex_buffer(0, self.buf_plane_vertices.slice(..));
-            render_pass.draw(0..(3 * 2), 0..1);
+            render_pass.set_pipeline(&self.pipeline_plane_env);
+            render_pass.set_bind_group(0, &self.bindgroup_plane_env, &[]);
+            render_pass.set_vertex_buffer(0, self.buf_plane_env.slice(..));
+            render_pass.draw(0..(PLANE_VERTICES.len() as u32), 0..1);
 
-            // render_pass.set_pipeline(&self.buf_agent_vertices);
-            render_pass.set_pipeline(&self.pipeline_agents);
-            render_pass.set_vertex_buffer(0, self.buf_agent_vertices.slice(..));
-            render_pass.draw(0..3, 0..1);
-        }
-
-        {
-            // let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            //     label: Some("Agents Render Pass"),
-            //     color_attachments: &[Some(wgpu::RenderP  {
-            //         view: &view,
-            //         resolve_target: None,
-            //         ops: wgpu::Operations {
-            //             load: wgpu::LoadOp::Load,
-            //             store: wgpu::StoreOp::Store,
-            //         },
-            //     })],
-            //     depth_stencil_attachment: None,
-            //     occlusion_query_set: None,
-            //     timestamp_writes: None,
-            // });
+            render_pass.set_pipeline(&self.pipeline_plane_agents);
+            render_pass.set_bind_group(0, &self.bindgroup_plane_agents, &[]);
+            render_pass.set_vertex_buffer(0, self.buf_plane_agents.slice(..));
+            render_pass.draw(0..(PLANE_VERTICES.len() as u32), 0..1);
         }
 
         self.gpu_queue.submit(std::iter::once(encoder.finish()));

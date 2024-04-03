@@ -1,28 +1,31 @@
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct AgentVert {
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, Default)]
+pub struct Agent {
     position: [f32; 2],
+    angle: f32,
 }
 
-const AGENT_SIZE: f32 = 0.2;
+const NUM_AGENTS: usize = 100;
 
-/// Equilateral triangle centered at the origin
-pub const AGENT_VERTICES: &[AgentVert] = &[
-    AgentVert {
-        position: [0f32, AGENT_SIZE * 0.433],
-    },
-    AgentVert {
-        position: [AGENT_SIZE * -0.5, AGENT_SIZE * -0.433],
-    },
-    AgentVert {
-        position: [AGENT_SIZE * 0.5, AGENT_SIZE * -0.433],
-    },
-];
+lazy_static! {
+    pub static ref AGENTS_INIT: [Agent; NUM_AGENTS] = {
+        let mut agents_vec = Vec::with_capacity(NUM_AGENTS);
 
-impl AgentVert {
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        for _ in 0..NUM_AGENTS {
+            agents_vec.push(Agent {
+                position: [rand::random(), rand::random()],
+                angle: rand::random(),
+            })
+        }
+
+        agents_vec.try_into().unwrap()
+    };
+}
+
+impl Agent {
+    pub fn buf_layout_desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<AgentVert>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<Agent>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[wgpu::VertexAttribute {
                 shader_location: 0,
@@ -32,12 +35,23 @@ impl AgentVert {
         }
     }
 
-    pub fn shader_desc() -> wgpu::ShaderModuleDescriptor<'static> {
-        wgpu::ShaderModuleDescriptor {
-            label: Some("Agent Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader_agent.wgsl").into()),
+    pub fn buf_init_desc() -> wgpu::util::BufferInitDescriptor<'static> {
+        wgpu::util::BufferInitDescriptor {
+            label: Some("Agent Buffer"),
+            contents: bytemuck::cast_slice(&*AGENTS_INIT),
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
         }
     }
+
+    // pub fn shader_desc() -> wgpu::ShaderModuleDescriptor<'static> {
+    //     wgpu::ShaderModuleDescriptor {
+    //         label: Some("Agent Shader"),
+    //         source: wgpu::ShaderSource::Wgsl(include_str!("shader_agent.wgsl").into()),
+    //     }
+    // }
 
     pub fn pipeline_layout_desc() -> wgpu::PipelineLayoutDescriptor<'static> {
         wgpu::PipelineLayoutDescriptor {
@@ -45,18 +59,5 @@ impl AgentVert {
             bind_group_layouts: &[],
             push_constant_ranges: &[],
         }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct AgentInstance {
-    position: [f32; 2],
-    direction: f32,
-}
-
-impl AgentInstance {
-    pub fn buf_desc() -> wgpu::VertexBufferLayout<'static> {
-        todo!()
     }
 }
