@@ -2,6 +2,7 @@ use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::agents::{Agent, NUM_AGENTS};
+use crate::params::{AgentComputeParams, Params};
 use crate::render_plane::{Vertex, PLANE_VERTICES};
 
 pub struct State<'a> {
@@ -31,6 +32,10 @@ pub struct State<'a> {
 
     window_handle: &'a Window,
     pub window_size: PhysicalSize<u32>,
+
+    uniforms: Params,
+    uniform_buf_agent_compute: wgpu::Buffer,
+    uniform_bindgroup_agent_compute: wgpu::BindGroup,
 
     frame_num: u64,
 }
@@ -102,6 +107,39 @@ impl<'a> State<'a> {
             contents: bytemuck::cast_slice(PLANE_VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
+
+        let uniforms = Params::new(size.width, size.height);
+        let uniform_agent_compute = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Agent Compute Uniform"),
+            contents: bytemuck::cast_slice(&[uniforms.agent_compute_params]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let uniform_agent_compute_bindgroup_layout =
+            device.create_bind_group_layout(&AgentComputeParams::bind_layout_desc());
+        let uniform_agent_render = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Agent Render Uniform"),
+            contents: bytemuck::cast_slice(&[uniforms.agent_render_params]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let uniform_env_compute = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Env Render Uniform"),
+            contents: bytemuck::cast_slice(&[uniforms.env_compute_params]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let uniform_env_render = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Env Render Uniform"),
+            contents: bytemuck::cast_slice(&[uniforms.env_render_params]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let uniform_agent_compute_bindgroup =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Agent Compute Uniform Bind Group"),
+                layout: &uniform_agent_compute_bindgroup_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_agent_compute.as_entire_binding(),
+                }],
+            });
 
         let texture_agents = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Agent Texture"),
@@ -317,7 +355,10 @@ impl<'a> State<'a> {
         let compute_agent_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Agent Compute Pipeline Layout"),
-                bind_group_layouts: &[&compute_agent_bindgroup_layout],
+                bind_group_layouts: &[
+                    &compute_agent_bindgroup_layout,
+                    &uniform_agent_compute_bindgroup_layout,
+                ],
                 push_constant_ranges: &[],
             });
         let compute_agent_pipeline =
@@ -355,6 +396,10 @@ impl<'a> State<'a> {
 
             window_handle: window,
             window_size: size,
+
+            uniforms,
+            uniform_buf_agent_compute: uniform_agent_compute,
+            uniform_bindgroup_agent_compute: uniform_agent_compute_bindgroup,
 
             frame_num: 0,
         })
@@ -426,13 +471,16 @@ impl<'a> State<'a> {
         }
 
         {
-            encoder.clear_texture(&self._texture_agents, &wgpu::ImageSubresourceRange {
-                aspect: wgpu::TextureAspect::All,
-                base_mip_level: 0,
-                mip_level_count: None,
-                base_array_layer: 0,
-                array_layer_count: None,
-            });
+            encoder.clear_texture(
+                &self._texture_agents,
+                &wgpu::ImageSubresourceRange {
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level: 0,
+                    mip_level_count: None,
+                    base_array_layer: 0,
+                    array_layer_count: None,
+                },
+            );
         }
 
         {
@@ -450,6 +498,7 @@ impl<'a> State<'a> {
                 &self.bindgroup_compute_agents[(self.frame_num % 2) as usize],
                 &[],
             );
+            compute_pass.set_bind_group(1, &self.uniform_bindgroup_agent_compute, &[]);
             compute_pass.dispatch_workgroups(xgroups, 1, 1);
         }
 
