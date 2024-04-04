@@ -2,7 +2,8 @@ use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::agents::{Agent, NUM_AGENTS};
-use crate::params::{AgentComputeParams, Params};
+use crate::environment::EnvCell;
+use crate::params::{AgentComputeParams, EnvComputeParams, Params};
 use crate::render_plane::{Vertex, PLANE_VERTICES};
 
 pub struct State<'a> {
@@ -15,11 +16,13 @@ pub struct State<'a> {
     bindgroup_plane_agents: wgpu::BindGroup,
 
     bindgroup_compute_agents: [wgpu::BindGroup; 2],
+    bindgroup_compute_env: [wgpu::BindGroup; 2],
 
     pipeline_plane_env: wgpu::RenderPipeline,
     pipeline_plane_agents: wgpu::RenderPipeline,
 
     pipeline_compute_agents: wgpu::ComputePipeline,
+    pipeline_compute_env: wgpu::ComputePipeline,
 
     buf_plane_env: wgpu::Buffer,
     buf_plane_agents: wgpu::Buffer,
@@ -35,7 +38,9 @@ pub struct State<'a> {
 
     uniforms: Params,
     uniform_buf_agent_compute: wgpu::Buffer,
+    uniform_buf_env_compute: wgpu::Buffer,
     uniform_bindgroup_agent_compute: wgpu::BindGroup,
+    uniform_bindgroup_env_compute: wgpu::BindGroup,
 
     frame_num: u64,
 }
@@ -116,21 +121,27 @@ impl<'a> State<'a> {
         });
         let uniform_agent_compute_bindgroup_layout =
             device.create_bind_group_layout(&AgentComputeParams::bind_layout_desc());
+
         let uniform_agent_render = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Agent Render Uniform"),
             contents: bytemuck::cast_slice(&[uniforms.agent_render_params]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+
         let uniform_env_compute = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Env Render Uniform"),
             contents: bytemuck::cast_slice(&[uniforms.env_compute_params]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let uniform_env_compute_bindgroup_layout =
+            device.create_bind_group_layout(&EnvComputeParams::bind_layout_desc());
+
         let uniform_env_render = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Env Render Uniform"),
             contents: bytemuck::cast_slice(&[uniforms.env_render_params]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+
         let uniform_agent_compute_bindgroup =
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Agent Compute Uniform Bind Group"),
@@ -140,6 +151,15 @@ impl<'a> State<'a> {
                     resource: uniform_agent_compute.as_entire_binding(),
                 }],
             });
+
+        let uniform_env_compute_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Env Compute Uniform Bind Group"),
+            layout: &uniform_env_compute_bindgroup_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_env_compute.as_entire_binding(),
+            }],
+        });
 
         let texture_agents = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Agent Texture"),
@@ -310,6 +330,14 @@ impl<'a> State<'a> {
 
         let buf_agent_forward = device.create_buffer_init(&Agent::buf_init_desc());
         let buf_agent_reverse = device.create_buffer_init(&Agent::buf_init_desc());
+        let buf_env_forward = device.create_buffer(&EnvCell::buf_init_desc(
+            size.width as usize,
+            size.height as usize,
+        ));
+        let buf_env_reverse = device.create_buffer(&EnvCell::buf_init_desc(
+            size.width as usize,
+            size.height as usize,
+        ));
 
         let compute_agent_shader = device.create_shader_module(Agent::compute_shader_desc());
         let compute_agent_bindgroup_layout =
@@ -333,11 +361,11 @@ impl<'a> State<'a> {
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: buf_env_forward.as_entire_binding(),
+                        resource: buf_env_reverse.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: wgpu::BindingResource::TextureView(&texture_env_view),
+                        resource: buf_env_forward.as_entire_binding(),
                     },
                 ],
             }),
@@ -359,11 +387,11 @@ impl<'a> State<'a> {
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: buf_env_reverse.as_entire_binding(),
+                        resource: buf_env_forward.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: wgpu::BindingResource::TextureView(&texture_env_view),
+                        resource: buf_env_reverse.as_entire_binding(),
                     },
                 ],
             }),
@@ -385,6 +413,64 @@ impl<'a> State<'a> {
                 entry_point: "compute_main",
             });
 
+        let compute_env_shader = device.create_shader_module(EnvCell::compute_shader_desc());
+        let compute_env_bindgroup_layout =
+            device.create_bind_group_layout(&EnvCell::bind_layout_desc());
+        let compute_env_bindgroups = [
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Env Compute Bindgroup Forward"),
+                layout: &compute_env_bindgroup_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buf_env_forward.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: buf_env_reverse.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&texture_env_view),
+                    }
+                ],
+            }),
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Env Compute Bindgroup Reverse"),
+                layout: &compute_env_bindgroup_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buf_env_forward.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: buf_env_reverse.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&texture_env_view),
+                    }
+                ],
+            }),
+        ];
+        let compute_env_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Env Compute Pipeline Layout"),
+                bind_group_layouts: &[
+                    &compute_env_bindgroup_layout,
+                    &uniform_env_compute_bindgroup_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+        let compute_env_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Env Compute Pipeline"),
+                layout: Some(&compute_env_pipeline_layout),
+                module: &compute_env_shader,
+                entry_point: "compute_main",
+            });
+
         Some(Self {
             gpu_surface: surface,
             gpu_device: device,
@@ -395,11 +481,13 @@ impl<'a> State<'a> {
             bindgroup_plane_agents: plane_agent_bindgroup,
 
             bindgroup_compute_agents: compute_agent_bindgroups,
+            bindgroup_compute_env: compute_env_bindgroups,
 
             pipeline_plane_env: plane_env_pipeline,
             pipeline_plane_agents: plane_agent_pipeline,
 
             pipeline_compute_agents: compute_agent_pipeline,
+            pipeline_compute_env: compute_env_pipeline,
 
             buf_plane_env: buf_env_vertices,
             buf_plane_agents: buf_agent_vertices,
@@ -415,7 +503,9 @@ impl<'a> State<'a> {
 
             uniforms,
             uniform_buf_agent_compute: uniform_agent_compute,
+            uniform_buf_env_compute: uniform_env_compute,
             uniform_bindgroup_agent_compute: uniform_agent_compute_bindgroup,
+            uniform_bindgroup_env_compute: uniform_env_compute_bindgroup,
 
             frame_num: 0,
         })
@@ -516,6 +606,25 @@ impl<'a> State<'a> {
             );
             compute_pass.set_bind_group(1, &self.uniform_bindgroup_agent_compute, &[]);
             compute_pass.dispatch_workgroups(xgroups, 1, 1);
+        }
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Env Compute Pass"),
+                timestamp_writes: None,
+            });
+
+            let xgroups = self.window_size.width / 8;
+            let ygroups = self.window_size.height / 8;
+
+            compute_pass.set_pipeline(&self.pipeline_compute_env);
+            compute_pass.set_bind_group(
+                0,
+                &self.bindgroup_compute_env[(self.frame_num % 2) as usize],
+                &[],
+            );
+            compute_pass.set_bind_group(1, &self.uniform_bindgroup_env_compute, &[]);
+            compute_pass.dispatch_workgroups(xgroups, ygroups, 1);
         }
 
         self.gpu_queue.submit(std::iter::once(encoder.finish()));

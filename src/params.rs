@@ -20,7 +20,7 @@ pub struct AgentRenderParams {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct EnvComputeParams {
-    a: f32
+    dimensions: [u32; 2],
 }
 
 #[repr(C)]
@@ -39,7 +39,7 @@ impl Params {
                 a: 0.0,
             },
             env_compute_params: EnvComputeParams {
-                a: 0.0,
+                dimensions: [width, height],
             },
             env_render_params: EnvRenderParams {
                 a: 0.0,
@@ -52,6 +52,26 @@ impl AgentComputeParams {
     pub fn bind_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
         wgpu::BindGroupLayoutDescriptor {
             label: Some("Agent Compute Uniform Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ]
+        }
+    }
+}
+
+impl EnvComputeParams {
+    pub fn bind_layout_desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: Some("Env Compute Uniform Bind Group Layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,

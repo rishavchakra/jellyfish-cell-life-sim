@@ -2,6 +2,7 @@
 extern crate lazy_static;
 use winit::{dpi::PhysicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 mod agents;
+mod environment;
 mod gpu;
 mod params;
 mod render_plane;

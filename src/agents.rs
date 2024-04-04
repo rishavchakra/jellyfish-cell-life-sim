@@ -89,7 +89,7 @@ impl Agent {
                     },
                     count: None,
                 },
-                // Env Buffer: the compute shader reads the environment from these
+                // Source Env Buffer: the compute shader reads the environment from these
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -100,17 +100,17 @@ impl Agent {
                     },
                     count: None,
                 },
-                // Env Texture: the compute shader leaves a trail on this
+                // Destination Env Buffer: the compute shader leaves a trail on this
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
-                }
+                },
             ],
         }
     }
