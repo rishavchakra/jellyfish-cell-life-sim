@@ -236,7 +236,7 @@ impl<'a> State<'a> {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -286,7 +286,7 @@ impl<'a> State<'a> {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -331,6 +331,14 @@ impl<'a> State<'a> {
                         binding: 2,
                         resource: wgpu::BindingResource::TextureView(&texture_agents_view),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: buf_env_forward.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&texture_env_view),
+                    },
                 ],
             }),
             device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -348,6 +356,14 @@ impl<'a> State<'a> {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::TextureView(&texture_agents_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: buf_env_reverse.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&texture_env_view),
                     },
                 ],
             }),

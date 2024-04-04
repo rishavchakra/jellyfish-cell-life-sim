@@ -17,7 +17,8 @@ fn hash_2d(in: vec2<f32>) -> f32 {
 
 @group(0) @binding(0) var<storage, read> agentSrc: array<Agent>;
 @group(0) @binding(1) var<storage, read_write> agentDest: array<Agent>;
-@group(0) @binding(2) var texture: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var agent_texture: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(4) var env_texture: texture_storage_2d<rgba8unorm, write>;
 
 @group(1) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -47,7 +48,11 @@ fn compute_main(
     }
 
     agentDest[agent_id] = new_agent;
-    textureStore(texture,
+    textureStore(agent_texture,
+        vec2<i32>(i32(new_agent.position.x), i32(new_agent.position.y)),
+        vec4<f32>(1.0, 1.0, 1.0, 1.0)
+    );
+    textureStore(env_texture,
         vec2<i32>(i32(new_agent.position.x), i32(new_agent.position.y)),
         vec4<f32>(1.0, 1.0, 1.0, 1.0)
     );

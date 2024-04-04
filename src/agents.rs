@@ -10,7 +10,7 @@ pub struct Agent {
     angle: f32,
 }
 
-pub const NUM_AGENTS: usize = 200;
+pub const NUM_AGENTS: usize = 10_000;
 
 lazy_static! {
     pub static ref AGENTS_INIT: [Agent; NUM_AGENTS] = {
@@ -78,7 +78,7 @@ impl Agent {
                     },
                     count: None,
                 },
-                // Texture: the compute shader writes to this (for display)
+                // Agent Texture: the compute shader writes to this (for display)
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -89,6 +89,28 @@ impl Agent {
                     },
                     count: None,
                 },
+                // Env Buffer: the compute shader reads the environment from these
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Env Texture: the compute shader leaves a trail on this
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                }
             ],
         }
     }
