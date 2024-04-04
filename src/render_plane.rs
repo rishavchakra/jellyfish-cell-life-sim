@@ -8,28 +8,28 @@ pub struct Vertex {
 pub const PLANE_VERTICES: &[Vertex] = &[
     // Triangle 0
     Vertex {
-        position: [0.5, 0.5, 0.0],
+        position: [1.0, 1.0, 0.0],
         tex_coords: [1f32, 1f32],
     },
     Vertex {
-        position: [-0.5, 0.5, 0.0],
+        position: [-1.0, 1.0, 0.0],
         tex_coords: [0f32, 1f32],
     },
     Vertex {
-        position: [-0.5, -0.5, 0.0],
+        position: [-1.0, -1.0, 0.0],
         tex_coords: [0f32, 0f32],
     },
     // Triangle 1
     Vertex {
-        position: [-0.5, -0.5, 0.0],
+        position: [-1.0, -1.0, 0.0],
         tex_coords: [0f32, 0f32],
     },
     Vertex {
-        position: [0.5, -0.5, 0.0],
+        position: [1.0, -1.0, 0.0],
         tex_coords: [1f32, 0f32],
     },
     Vertex {
-        position: [0.5, 0.5, 0.0],
+        position: [1.0, 1.0, 0.0],
         tex_coords: [1f32, 1f32],
     },
 ];

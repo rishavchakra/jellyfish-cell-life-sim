@@ -1,16 +1,23 @@
 #[macro_use]
 extern crate lazy_static;
-use winit::{event::*, event_loop::EventLoop, window::WindowBuilder};
-mod gpu;
-mod render_plane;
+use winit::{dpi::PhysicalSize, event::*, event_loop::EventLoop, window::WindowBuilder};
 mod agents;
+mod gpu;
+mod params;
+mod render_plane;
 
 fn main() {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_title("Slime")
+        .with_inner_size(PhysicalSize::new(1000, 1000))
+        .build(&event_loop)
+        .unwrap();
     let mut state =
         pollster::block_on(gpu::State::new(&window)).expect("GPU Initialization failed");
+
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
     event_loop
         .run(move |event, elwt| match event {
