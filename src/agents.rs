@@ -8,6 +8,7 @@ use rand::{
 pub struct Agent {
     position: [f32; 2],
     angle: f32,
+    turn_speed: f32,
 }
 
 pub const NUM_AGENTS: usize = 10_000;
@@ -16,16 +17,17 @@ lazy_static! {
     pub static ref AGENTS_INIT: [Agent; NUM_AGENTS] = {
         let mut agents_vec = Vec::with_capacity(NUM_AGENTS);
         let mut rng = thread_rng();
-        let position_range = Uniform::from(400..=600);
+        let position_range = Uniform::from(200..=800);
         let angle_range = Uniform::from(0.0..std::f32::consts::TAU);
 
         for _ in 0..NUM_AGENTS {
+            let x = position_range.sample(&mut rng) as f32;
+            let y = position_range.sample(&mut rng) as f32;
+            // println!("{}, {}", x, y);
             agents_vec.push(Agent {
-                position: [
-                    position_range.sample(&mut rng) as f32,
-                    position_range.sample(&mut rng) as f32,
-                ],
+                position: [x, y],
                 angle: angle_range.sample(&mut rng),
+                turn_speed: 0f32,
             })
         }
 

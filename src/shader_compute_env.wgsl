@@ -48,8 +48,8 @@ fn compute_main(
         }
     }
     let neighborhood_blend = neighborhood_total / f32(neighborhood_cells);
-    new_pheromone = (0.2 * neighborhood_blend) + (0.8 * new_pheromone);
-    new_pheromone = max(0.0, new_pheromone - 0.002);
+    new_pheromone = (0.1 * neighborhood_blend) + (0.9 * new_pheromone);
+    new_pheromone = max(0.0, new_pheromone - 0.005);
 
     var new_cell: EnvCell;
     new_cell.pheromone_level = new_pheromone;
