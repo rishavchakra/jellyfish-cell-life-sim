@@ -441,11 +441,11 @@ impl<'a> State<'a> {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: buf_env_forward.as_entire_binding(),
+                        resource: buf_env_reverse.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: buf_env_reverse.as_entire_binding(),
+                        resource: buf_env_forward.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
