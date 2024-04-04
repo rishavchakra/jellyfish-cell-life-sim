@@ -11,6 +11,10 @@ struct ComputeInput {
 @builtin(global_invocation_id) global_id: vec3<u32>,
 };
 
+fn hash_2d(in: vec2<f32>) -> f32 {
+    return fract(sin(dot(in, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
 @group(0) @binding(0) var<storage, read> agentSrc: array<Agent>;
 @group(0) @binding(1) var<storage, read_write> agentDest: array<Agent>;
 @group(0) @binding(2) var texture: texture_storage_2d<rgba8unorm, write>;
@@ -39,7 +43,7 @@ fn compute_main(
         || u32(new_agent.position.x) > uniforms.dimensions.x
         || u32(new_agent.position.y) > uniforms.dimensions.y) {
         new_agent.position = agentSrc[agent_id].position;
-        new_agent.angle = new_agent.angle + 3.1415;
+        new_agent.angle = hash_2d(new_agent.position + new_agent.angle) * 6.28;
     }
 
     agentDest[agent_id] = new_agent;
